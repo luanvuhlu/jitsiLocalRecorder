@@ -4,25 +4,6 @@ let recorders = {};
 let recorderStreams = [];
 
 /**
- * Mixes multiple audio tracks and the first video track it finds
- * */
-// function mixer(stream1, stream2) {
-//     const ctx = new AudioContext();
-//     const dest = ctx.createMediaStreamDestination();
-
-//     if(stream1.getAudioTracks().length > 0)
-//         ctx.createMediaStreamSource(stream1).connect(dest);
-
-//     if(stream2.getAudioTracks().length > 0)
-//         ctx.createMediaStreamSource(stream2).connect(dest);
-
-//     let tracks = dest.stream.getTracks();
-//     tracks = tracks.concat(stream1.getVideoTracks()).concat(stream2.getVideoTracks());
-
-//     return new MediaStream(tracks)
-// }
-
-/**
  * Returns a filename based ono the Jitsi room name in the URL and timestamp
  * */
 function getFilename(recorderStream) {
@@ -36,6 +17,23 @@ function getFilename(recorderStream) {
         return `recording_${name}_${timestamp}`;
 }
 
+function mixer(stream1, stream2) {
+    const ctx = new AudioContext();
+    const dest = ctx.createMediaStreamDestination();
+
+    if(stream1.getAudioTracks().length > 0)
+        ctx.createMediaStreamSource(stream1).connect(dest);
+
+    if(stream2.getAudioTracks().length > 0)
+        ctx.createMediaStreamSource(stream2).connect(dest);
+
+    let tracks = dest.stream.getTracks();
+    tracks = tracks.concat(stream1.getVideoTracks()).concat(stream2.getVideoTracks());
+
+    return new MediaStream(tracks)
+
+}
+
 /**
  * Start a new recording
  * */
@@ -43,15 +41,17 @@ const start = document.getElementById('recordStart');
 start.addEventListener('click', async () => {
     const videos = document.querySelectorAll('.videocontainer video:not(#largeVideo)');
     videos.forEach(function (video) {
-        const parent = videos[1].parentElement;
-        const name = 'Unknow';
+        const parent = video.parentElement;
+        let name = 'Unknow';
         const parent_id = parent.getAttribute('id');
         if (parent_id.startsWith('local')) {
-            name = 'me'
+            name = 'me';
+            return;
         } else {
-            name = parent.querySelector('.displayNameContainer span').innerHTML
+            name = parent.querySelector('.displayNameContainer span').innerHTML;
         }
-        const recorderStream = video.captureStream()
+        const audio = video.nextSibling;
+        const recorderStream = mixer(video.captureStream(), audio.captureStream());
         const recorderStreamObj = {
             'id': parent_id,
             'name': name,
@@ -99,7 +99,7 @@ function stopCapture() {
     start.disabled = false;
     pause.disabled = true;
     stop.disabled = true;
-    play.disabled = false;
+    // play.disabled = false;
     save.disabled = false;
 
     start.innerText = "Record";
@@ -164,10 +164,9 @@ pause.addEventListener('click', () => {
  * */
 const save = document.getElementById('recordSave');
 save.addEventListener('click', () => {
-    Object.keys(recorderStreams).forEach(function (id) {
-        const recorderStream = recorderStreams[id]
+    recorderStreams.forEach(function (recorderStream) {
         const recordingData = recorderStream['data']
-        const blob = new Blob(recordingData, { type: 'video/webm' });
+        const blob = new Blob(recordingData, { type: recorders[recorderStream['id']].mimeType });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         // a.style.display = 'none';
