@@ -1,16 +1,15 @@
 const status = document.getElementById('status');
 
 let recorders = {};
-let recorderStreams = [];
 
 /**
  * Returns a filename based ono the Jitsi room name in the URL and timestamp
  * */
-function getFilename(recorderStream) {
+function getFilename(recorder) {
     const now = new Date();
     const timestamp = now.toISOString();
     const room = new RegExp(/(^.+)\s\|/).exec(document.title);
-    const name = recorderStream['name']
+    const name = recorder['name']
     if (room && room[1] !== "")
         return `${room[1]}_${name}_${timestamp}`;
     else
@@ -21,10 +20,10 @@ function mixer(stream1, stream2) {
     const ctx = new AudioContext();
     const dest = ctx.createMediaStreamDestination();
 
-    if(stream1.getAudioTracks().length > 0)
+    if (stream1.getAudioTracks().length > 0)
         ctx.createMediaStreamSource(stream1).connect(dest);
 
-    if(stream2.getAudioTracks().length > 0)
+    if (stream2.getAudioTracks().length > 0)
         ctx.createMediaStreamSource(stream2).connect(dest);
 
     let tracks = dest.stream.getTracks();
@@ -50,20 +49,24 @@ start.addEventListener('click', async () => {
         } else {
             name = parent.querySelector('.displayNameContainer span').innerHTML;
         }
-        const audio = video.nextSibling;
-        const recorderStream = mixer(video.captureStream(), audio.captureStream());
-        const recorderStreamObj = {
+        const audio = video.parentElement.querySelector('audio');
+        const recorderStream = audio.captureStream();
+        // usit if you want record both video and audio
+        // const recorderStream = mixer(video.captureStream(), audio.captureStream());
+
+        const recorder = new MediaRecorder(recorderStream, { mimeType: 'audio/webm' }); // use video/webm
+
+        const recorderObj = {
             'id': parent_id,
             'name': name,
             'stream': recorderStream,
-            'data': []
+            'data': [],
+            'recorder': recorder
         };
-        recorderStreams.push(recorderStreamObj);
-        const recorder = new MediaRecorder(recorderStream, { mimeType: 'video/webm' });
 
         recorder.ondataavailable = e => {
             if (e.data && e.data.size > 0) {
-                recorderStreamObj['data'].push(e.data);
+                recorderObj['data'].push(e.data);
             }
         };
         recorder.onStop = () => {
@@ -76,7 +79,8 @@ start.addEventListener('click', async () => {
         });
 
         recorder.start();
-        recorders[parent_id] = recorder
+        recorders[parent_id] = recorderObj
+
     });
     console.log("started recording");
     start.innerText = "Recording";
@@ -94,7 +98,7 @@ const stop = document.getElementById('recordStop');
 function stopCapture() {
     console.log("Stopping recording");
     Object.keys(recorders).forEach(function (id) {
-        recorders[id].stop()
+        recorders[id]['recorder'].stop()
     })
     start.disabled = false;
     pause.disabled = true;
@@ -113,24 +117,26 @@ stop.addEventListener('click', stopCapture);
  * */
 const pause = document.getElementById('recordPause');
 pause.addEventListener('click', () => {
-    if (recorder.state === 'paused') {
-        Object.keys(recorders).forEach(function (id) {
-            recorders[id].resume()
-        })
-        pause.innerText = "Pause"
-    }
-    else if (recorder.state === 'recording') {
-        Object.keys(recorders).forEach(function (id) {
-            recorders[id].pause()
-        })
-        pause.innerText = "Resume"
+    Object.keys(recorders).forEach(function (id) {
+        const recorder = recorders[id]['recorder'];
+        if (recorder.state === 'paused') {
+            Object.keys(recorders).forEach(function (id) {
+                recorders[id]['recorder'].resume()
+            })
+            pause.innerText = "Pause"
+        }
+        else if (recorder.state === 'recording') {
+            Object.keys(recorders).forEach(function (id) {
+                recorders[id]['recorder'].pause()
+            })
+            pause.innerText = "Resume"
 
-    }
-    else
-        console.error(`recorder in unhandled state: ${recorder.state}`);
+        }
+        else
+            console.error(`recorder in unhandled state: ${recorder.state}`);
 
-    console.log(`recorder ${recorder.state === 'paused' ? "paused" : "recording"}`);
-
+        console.log(`recorder ${recorder.state === 'paused' ? "paused" : "recording"}`);
+    });
 });
 
 /**
@@ -140,14 +146,14 @@ pause.addEventListener('click', () => {
 // const play = document.getElementById('recordPlay');
 // play.addEventListener('click', () => {
 //     alert('Not implement yet!');
-    // playback.hidden = !playback.hidden;
-    // if (!isPlaying && !playback.hidden) {
-    //     playback.src = window.URL.createObjectURL(new Blob(recordingData, { type: 'video/webm' }));
-    //     playback.play();
-    //     play.innerText = "Hide";
-    // }
-    // else
-    //     play.innerText = "Play";
+// playback.hidden = !playback.hidden;
+// if (!isPlaying && !playback.hidden) {
+//     playback.src = window.URL.createObjectURL(new Blob(recordingData, { type: 'video/webm' }));
+//     playback.play();
+//     play.innerText = "Hide";
+// }
+// else
+//     play.innerText = "Play";
 
 // });
 
@@ -164,14 +170,14 @@ pause.addEventListener('click', () => {
  * */
 const save = document.getElementById('recordSave');
 save.addEventListener('click', () => {
-    recorderStreams.forEach(function (recorderStream) {
-        const recordingData = recorderStream['data']
-        const blob = new Blob(recordingData, { type: recorders[recorderStream['id']].mimeType });
+    Object.keys(recorders).forEach(function (id) {
+        const recorderObj = recorders[id];
+        const blob = new Blob(recorderObj['data'], { type: recorderObj['recorder'].mimeType });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         // a.style.display = 'none';
         a.href = url;
-        a.download = `${getFilename(recorderStream)}.webm`;
+        a.download = `${getFilename(recorderObj)}.webm`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
@@ -179,7 +185,5 @@ save.addEventListener('click', () => {
             window.URL.revokeObjectURL(url);
             console.log(`${a.download} save option shown`);
         }, 100);
-        })
-
-    
+    })
 });
